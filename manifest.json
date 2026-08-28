@@ -1,7 +1,7 @@
 {
 	"id": "openaugi",
 	"name": "OpenAugi",
-	"version": "0.6.0",
+	"version": "0.7.0",
 	"minAppVersion": "1.8.9",
 	"description": "The human context layer for your AI agents. Gather bounded context from linked notes and backlinks, queue agent tasks, and distill raw material into atomic notes, summaries, or posts.",
 	"author": "Chris Lettieri",
