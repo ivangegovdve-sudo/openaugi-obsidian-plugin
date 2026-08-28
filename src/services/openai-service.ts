@@ -1,13 +1,67 @@
-import { TranscriptResponse, DistillResponse, PublishResponse } from '../types/transcript';
+import { requestUrl } from 'obsidian';
+import { TranscriptResponse, DistillResponse } from '../types/transcript';
+
+/** Shape of an OpenAI error payload. */
+interface OpenAIErrorBody {
+  error?: { message?: string };
+}
+
+/** Shape of a chat-completions response. */
+interface OpenAIChatBody {
+  choices: { message: { content: string; refusal?: string | null } }[];
+}
+
+/** Shape of a `GET /v1/models` response. */
+interface OpenAIModelsBody {
+  data: { id: string }[];
+}
+
+/** Normalised result of an OpenAI HTTP call. */
+interface OpenAIHttpResult<T> {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  body: T | null;
+}
 
 /**
- * A simple tokeinzer to estimate the number of tokens
- * @param text Text to count tokens from
- * @returns Approximate token count
+ * Perform an OpenAI API request via Obsidian's `requestUrl`.
+ *
+ * `requestUrl` is used instead of `fetch` so requests work on mobile and are
+ * not subject to browser CORS restrictions. `throw: false` lets us surface
+ * OpenAI's own error payload rather than a generic network error.
  */
-function estimateTokens(text: string): number {
-  // Rough estimate: 1 token is approximately 4 characters
-  return Math.ceil(text.length / 4);
+async function openAIRequest<T>(
+  url: string,
+  init: { method: string; headers: Record<string, string>; body?: string }
+): Promise<OpenAIHttpResult<T>> {
+  const response = await requestUrl({
+    url,
+    method: init.method,
+    headers: init.headers,
+    body: init.body,
+    throw: false
+  });
+
+  let body: T | null = null;
+  try {
+    body = response.json as T;
+  } catch {
+    // Non-JSON body (e.g. an HTML error page from a proxy).
+  }
+
+  return {
+    ok: response.status >= 200 && response.status < 300,
+    status: response.status,
+    statusText: `HTTP ${response.status}`,
+    body
+  };
+}
+
+/** Pull a human-readable message out of an OpenAI error payload. */
+function errorMessage(result: OpenAIHttpResult<unknown>): string {
+  const body = result.body as OpenAIErrorBody | null;
+  return body?.error?.message ?? result.statusText;
 }
 
 /**
@@ -32,7 +86,7 @@ export class OpenAIService {
       throw new Error('API key is required to fetch models');
     }
 
-    const response = await fetch('https://api.openai.com/v1/models', {
+    const response = await openAIRequest<OpenAIModelsBody>('https://api.openai.com/v1/models', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`
@@ -40,11 +94,13 @@ export class OpenAIService {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Failed to fetch models: ${errorData.error?.message || response.statusText}`);
+      throw new Error(`Failed to fetch models: ${errorMessage(response)}`);
     }
 
-    const data = await response.json();
+    const data = response.body;
+    if (!data) {
+      throw new Error('Failed to fetch models: unexpected response from OpenAI');
+    }
 
     // Patterns to exclude (legacy, specialized, non-chat models)
     const excludePatterns = [
@@ -68,8 +124,8 @@ export class OpenAIService {
 
     // Include models that start with gpt- (for gpt-5, gpt-5.1, gpt-6, etc.) or o4+
     const chatModels = data.data
-      .map((model: { id: string }) => model.id)
-      .filter((id: string) => {
+      .map(model => model.id)
+      .filter(id => {
         // Must start with gpt- or o (for reasoning models like o4, o5, etc.)
         if (!id.startsWith('gpt-') && !id.startsWith('o') && !id.startsWith('chatgpt-')) {
           return false;
@@ -209,7 +265,7 @@ export class OpenAIService {
     const prompt = this.getPrompt(content);
     
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await openAIRequest<OpenAIChatBody>('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -266,11 +322,13 @@ export class OpenAIService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`OpenAI API error: ${response.status} ${errorData.error?.message || response.statusText}`);
+        throw new Error(`OpenAI API error: ${response.status} ${errorMessage(response)}`);
       }
 
-      const responseData = await response.json();
+      const responseData = response.body;
+      if (!responseData) {
+        throw new Error('OpenAI API error: unexpected response from OpenAI');
+      }
       const structuredData = responseData.choices[0].message.content;
       
       // Check for API refusal
@@ -279,9 +337,7 @@ export class OpenAIService {
       }
       
       // Parse the JSON
-      const parsedData: TranscriptResponse = typeof structuredData === 'string' 
-        ? JSON.parse(structuredData) 
-        : structuredData;
+      const parsedData = JSON.parse(structuredData) as TranscriptResponse;
         
       return parsedData;
     } catch (error) {
@@ -361,7 +417,7 @@ export class OpenAIService {
     const prompt = this.getDistillPrompt(content, customPrompt);
     
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await openAIRequest<OpenAIChatBody>('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -418,11 +474,13 @@ export class OpenAIService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`OpenAI API error: ${response.status} ${errorData.error?.message || response.statusText}`);
+        throw new Error(`OpenAI API error: ${response.status} ${errorMessage(response)}`);
       }
 
-      const responseData = await response.json();
+      const responseData = response.body;
+      if (!responseData) {
+        throw new Error('OpenAI API error: unexpected response from OpenAI');
+      }
       const structuredData = responseData.choices[0].message.content;
       
       // Check for API refusal
@@ -431,9 +489,7 @@ export class OpenAIService {
       }
       
       // Parse the JSON
-      const parsedData: DistillResponse = typeof structuredData === 'string' 
-        ? JSON.parse(structuredData) 
-        : structuredData;
+      const parsedData = JSON.parse(structuredData) as DistillResponse;
         
       // Initialize sourceNotes as empty array (will be populated by DistillService)
       parsedData.sourceNotes = [];
@@ -527,7 +583,7 @@ Return a single markdown blog post, ready to publish.`;
     const prompt = this.getPublishPrompt(content, customPrompt);
 
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await openAIRequest<OpenAIChatBody>('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -541,11 +597,13 @@ Return a single markdown blog post, ready to publish.`;
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`OpenAI API error: ${response.status} ${errorData.error?.message || response.statusText}`);
+        throw new Error(`OpenAI API error: ${response.status} ${errorMessage(response)}`);
       }
 
-      const responseData = await response.json();
+      const responseData = response.body;
+      if (!responseData) {
+        throw new Error('OpenAI API error: unexpected response from OpenAI');
+      }
 
       // Check for API refusal
       if (responseData.choices[0].message.refusal) {

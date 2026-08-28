@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as obsidian from 'obsidian';
 import { OpenAIService } from '../src/services/openai-service';
+
+/** Build a `requestUrl` response stub from a status code and JSON body. */
+function mockResponse(status: number, json: unknown) {
+  return { status, text: JSON.stringify(json), json, arrayBuffer: new ArrayBuffer(0) };
+}
 
 describe('OpenAIService', () => {
   let service: OpenAIService;
@@ -120,9 +126,7 @@ describe('OpenAIService', () => {
     });
 
     it('calls OpenAI API with correct parameters', async () => {
-      const mockResponse = {
-        ok: true,
-        json: async () => ({
+      const response = mockResponse(200, ({
           choices: [{
             message: {
               content: JSON.stringify({
@@ -133,39 +137,33 @@ describe('OpenAIService', () => {
               refusal: null
             }
           }]
-        })
-      };
+        }));
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any);
+      const requestSpy = vi.spyOn(obsidian, 'requestUrl').mockResolvedValue(response as any);
 
       const result = await service.parseTranscript('Test transcript');
 
-      expect(fetchSpy).toHaveBeenCalledOnce();
-      const [url, options] = fetchSpy.mock.calls[0];
-      expect(url).toBe('https://api.openai.com/v1/chat/completions');
-      expect((options as any).method).toBe('POST');
-      expect(JSON.parse((options as any).body).model).toBe('gpt-5');
+      expect(requestSpy).toHaveBeenCalledOnce();
+      const [params] = requestSpy.mock.calls[0];
+      expect(params.url).toBe('https://api.openai.com/v1/chat/completions');
+      expect(params.method).toBe('POST');
+      expect(JSON.parse(params.body as string).model).toBe('gpt-5');
 
       expect(result.summary).toBe('Test summary');
       expect(result.notes).toHaveLength(1);
       expect(result.tasks).toHaveLength(1);
 
-      fetchSpy.mockRestore();
+      requestSpy.mockRestore();
     });
 
     it('throws on API error response', async () => {
-      const mockResponse = {
-        ok: false,
-        status: 401,
-        statusText: 'Unauthorized',
-        json: async () => ({ error: { message: 'Invalid API key' } })
-      };
+      const response = mockResponse(401, { error: { message: 'Invalid API key' } });
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any);
+      const requestSpy = vi.spyOn(obsidian, 'requestUrl').mockResolvedValue(response as any);
 
       await expect(service.parseTranscript('content')).rejects.toThrow('OpenAI API error');
 
-      fetchSpy.mockRestore();
+      requestSpy.mockRestore();
     });
   });
 
@@ -176,9 +174,7 @@ describe('OpenAIService', () => {
     });
 
     it('parses structured response correctly', async () => {
-      const mockResponse = {
-        ok: true,
-        json: async () => ({
+      const response = mockResponse(200, ({
           choices: [{
             message: {
               content: JSON.stringify({
@@ -192,10 +188,9 @@ describe('OpenAIService', () => {
               refusal: null
             }
           }]
-        })
-      };
+        }));
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any);
+      const requestSpy = vi.spyOn(obsidian, 'requestUrl').mockResolvedValue(response as any);
 
       const result = await service.distillContent('aggregated content');
 
@@ -204,32 +199,29 @@ describe('OpenAIService', () => {
       expect(result.sourceNotes).toEqual([]); // Initialized as empty
       expect(result.tasks).toEqual([]);
 
-      fetchSpy.mockRestore();
+      requestSpy.mockRestore();
     });
   });
 
   describe('publishContent', () => {
     it('returns plain text content', async () => {
-      const mockResponse = {
-        ok: true,
-        json: async () => ({
+      const response = mockResponse(200, ({
           choices: [{
             message: {
               content: '# My Blog Post\n\nThis is the published content.',
               refusal: null
             }
           }]
-        })
-      };
+        }));
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any);
+      const requestSpy = vi.spyOn(obsidian, 'requestUrl').mockResolvedValue(response as any);
 
       const result = await service.publishContent('raw notes');
 
       expect(result).toContain('# My Blog Post');
       expect(result).toContain('published content');
 
-      fetchSpy.mockRestore();
+      requestSpy.mockRestore();
     });
   });
 });

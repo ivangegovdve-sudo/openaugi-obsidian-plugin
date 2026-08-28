@@ -28,7 +28,17 @@ export class MetadataCache {}
 
 export class App {}
 
-export class Plugin {}
+export class Plugin {
+  app: any;
+  manifest: any;
+  constructor(app?: any, manifest?: any) { this.app = app; this.manifest = manifest; }
+  addCommand(_c: any) { return _c; }
+  addSettingTab(_t: any) {}
+  addStatusBarItem() { return null; }
+  registerEvent(_e: any) {}
+  loadData(): Promise<any> { return Promise.resolve(null); }
+  saveData(_d: any): Promise<void> { return Promise.resolve(); }
+}
 
 export class Component {}
 
@@ -80,3 +90,27 @@ export const Platform = {
 
 export class MarkdownView {}
 export class WorkspaceLeaf {}
+
+export interface RequestUrlParam {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  throw?: boolean;
+}
+
+export interface RequestUrlResponse {
+  status: number;
+  text: string;
+  json: any;
+  arrayBuffer: ArrayBuffer;
+}
+
+/**
+ * Stub for Obsidian's `requestUrl`. Tests spy on this export to simulate
+ * OpenAI responses; the default implementation fails loudly so an unmocked
+ * network call in a test is obvious.
+ */
+export function requestUrl(_params: RequestUrlParam): Promise<RequestUrlResponse> {
+  return Promise.reject(new Error('requestUrl was called without a test mock'));
+}
