@@ -44,7 +44,7 @@ export class ContextGatheringModal extends Modal {
     contentEl.empty();
     contentEl.addClass('openaugi-context-modal');
 
-    contentEl.createEl('h2', { text: 'Gather Context' });
+    contentEl.createEl('h2', { text: 'Gather context' });
 
     contentEl.createEl('p', {
       text: 'Configure how to discover and gather notes for processing.',
@@ -109,11 +109,7 @@ export class ContextGatheringModal extends Modal {
     }
 
     // Estimate display
-    this.estimateEl = contentEl.createDiv({ cls: 'context-estimate' });
-    this.estimateEl.style.padding = '10px';
-    this.estimateEl.style.marginTop = '10px';
-    this.estimateEl.style.backgroundColor = 'var(--background-secondary)';
-    this.estimateEl.style.borderRadius = '5px';
+    this.estimateEl = contentEl.createDiv({ cls: 'openaugi-context-estimate' });
     await this.updateEstimate();
 
     // Action buttons
@@ -123,7 +119,7 @@ export class ContextGatheringModal extends Modal {
         .onClick(() => this.close())
       )
       .addButton(button => button
-        .setButtonText('Discover Notes')
+        .setButtonText('Discover notes')
         .setCta()
         .onClick(() => {
           this.onSubmit(this.config);
@@ -154,10 +150,10 @@ export class ContextGatheringModal extends Modal {
             .setDisabled(true);
         });
     } else {
-      const noNoteEl = this.modeSpecificContainer.createDiv();
-      noNoteEl.style.padding = '10px';
-      noNoteEl.style.color = 'var(--text-error)';
-      noNoteEl.setText('⚠️ No active note. Please open a note first.');
+      this.modeSpecificContainer.createDiv({
+        cls: 'openaugi-warning',
+        text: '⚠️ No active note. Please open a note first.'
+      });
     }
 
     // Link depth slider
@@ -256,7 +252,7 @@ export class ContextGatheringModal extends Modal {
       })
       .addExtraButton(button => {
         button.setIcon('info');
-        button.setTooltip('0 = header section (text under current markdown header)\n1-5 = fixed number of lines before and after the link');
+        button.setTooltip('0 = header section (text under current Markdown header)\n1-5 = fixed number of lines before and after the link');
       });
   }
 

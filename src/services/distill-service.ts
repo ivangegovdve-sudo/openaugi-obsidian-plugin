@@ -1,8 +1,9 @@
-import { App, TFile, MetadataCache, Component } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { createFileWithCollisionHandling } from '../utils/filename-utils';
 import { OpenAIService } from './openai-service';
 import { DistillResponse } from '../types/transcript';
 import { OpenAugiSettings } from '../types/settings';
+import { asDataviewLink, getDataviewPlugin } from '../types/dataview';
 
 /**
  * A simple tokeinzer to estimate the number of tokens
@@ -69,8 +70,6 @@ ${content}
 
       // Write log file
       await createFileWithCollisionHandling(this.app.vault, logFilePath, logContent);
-      
-      console.log(`Distill context logged to: ${logFilePath}`);
     } catch (error) {
       console.error('Failed to log distill context:', error);
     }
@@ -92,14 +91,12 @@ ${content}
   ): Promise<TFile[]> {
     let startTime: number;
     let endTime: number;
-    let cutoffDate: Date;
     
     if (fromDate && toDate) {
       // Use date range
       const from = new Date(fromDate);
       from.setHours(0, 0, 0, 0);
       startTime = from.getTime();
-      cutoffDate = from;
       
       const to = new Date(toDate);
       to.setHours(23, 59, 59, 999);
@@ -108,7 +105,6 @@ ${content}
       // Use days back
       endTime = Date.now();
       startTime = endTime - (daysBack * 24 * 60 * 60 * 1000);
-      cutoffDate = new Date(startTime);
     }
     
     const recentFiles: TFile[] = [];
@@ -191,7 +187,7 @@ ${content}
     // Match tags: # followed by word characters, may include forward slashes for nested tags
     // Must be preceded by whitespace or start of line, and followed by whitespace, punctuation, or end of line
     // Avoid matching markdown headers (## Header) by requiring non-# after the tag start
-    return content.replace(/(?:^|(?<=\s))#(?!#)[a-zA-Z0-9_][a-zA-Z0-9_/]*(?=\s|$|[.,;:!?)\]])/gm, '');
+    return content.replace(/(^|\s)#(?!#)[a-zA-Z0-9_][a-zA-Z0-9_/]*(?=\s|$|[.,;:!?)\]])/gm, '$1');
   }
 
   /**
@@ -222,14 +218,11 @@ ${content}
    */
   private async getFilesFromDataviewQuery(query: string, sourcePath: string): Promise<TFile[]> {
     // Check if dataview plugin is available
-    // @ts-ignore - Dataview API is not typed
-    const dataviewPlugin = this.app.plugins.plugins["dataview"];
-    if (!dataviewPlugin?.api) {
-      console.log("[OpenAugi] Dataview plugin not available");
+    const dvApi = getDataviewPlugin(this.app)?.api;
+    if (!dvApi) {
       return [];
     }
 
-    const dvApi = dataviewPlugin.api;
     const files: TFile[] = [];
 
     try {
@@ -242,8 +235,9 @@ ${content}
       if (queryResult.successful && queryResult.value) {
         if (queryResult.value.type === "list") {
           for (const item of queryResult.value.values) {
-            if (item && typeof item === "object" && "path" in item && typeof item.path === "string") {
-              const file = this.app.vault.getAbstractFileByPath(item.path);
+            const link = asDataviewLink(item);
+            if (link) {
+              const file = this.app.vault.getAbstractFileByPath(link.path);
               if (file instanceof TFile) {
                 files.push(file);
               }
@@ -251,9 +245,9 @@ ${content}
           }
         } else if (queryResult.value.type === "table") {
           for (const row of queryResult.value.values) {
-            const firstCol = row[0];
-            if (firstCol && typeof firstCol === "object" && "path" in firstCol && typeof firstCol.path === "string") {
-              const file = this.app.vault.getAbstractFileByPath(firstCol.path);
+            const link = Array.isArray(row) ? asDataviewLink(row[0]) : null;
+            if (link) {
+              const file = this.app.vault.getAbstractFileByPath(link.path);
               if (file instanceof TFile) {
                 files.push(file);
               }
@@ -356,10 +350,11 @@ ${content}
       }
     }
     
-    if (file instanceof TFile) {
+    if (file) {
+      const resolved = file;
       // Avoid duplicate files
-      if (!files.some(existingFile => existingFile.path === file!.path)) {
-        files.push(file);
+      if (!files.some(existingFile => existingFile.path === resolved.path)) {
+        files.push(resolved);
       }
     }
   }
@@ -431,7 +426,6 @@ ${content}
     
     // Always extract regular links as well, and combine with dataview results
     const metadataCache = this.app.metadataCache.getFileCache(file);
-    const initialCount = linkedFiles.length;
     
     if (metadataCache?.links) {
       for (const link of metadataCache.links) {
@@ -616,9 +610,9 @@ ${content}
     }
 
     // Extract date components from the header at the same positions
-    const year = header.substr(yearPos, 4);
-    const month = header.substr(monthPos, 2);
-    const day = header.substr(dayPos, 2);
+    const year = header.slice(yearPos, yearPos + 4);
+    const month = header.slice(monthPos, monthPos + 2);
+    const day = header.slice(dayPos, dayPos + 2);
 
     // Validate extracted values are numbers
     if (!/^\d{4}$/.test(year) || !/^\d{2}$/.test(month) || !/^\d{2}$/.test(day)) {
@@ -812,8 +806,6 @@ ${content}
       // Mark this file as processed
       processedFiles.set(file.path, true);
     }
-    
-    const uniqueFileCount = processedFiles.size;
     
     return { content: aggregatedContent, sourceNotes };
   }

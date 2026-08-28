@@ -1,4 +1,3 @@
-import { WorkspaceLeaf } from 'obsidian';
 
 /**
  * Modal loading indicator that shows processing status
@@ -22,7 +21,7 @@ export class LoadingIndicator {
     this.hide(); // Clear any existing indicators first
     
     // Create status bar item
-    this.statusBarItem = this.statusBar.createEl('div', {
+    this.statusBarItem = this.statusBar.createDiv({
       cls: 'status-bar-item mod-clickable',
       attr: {
         id: 'openaugi-status'
@@ -30,29 +29,29 @@ export class LoadingIndicator {
     });
 
     // Create icon
-    const iconEl = this.statusBarItem.createEl('span', {
+    const iconEl = this.statusBarItem.createSpan({
       cls: 'openaugi-status-icon'
     });
     
     // Create loading spinner
-    iconEl.createEl('span', {
+    iconEl.createSpan({
       cls: 'openaugi-spinner'
     });
     
     // Create text container
-    this.statusBarItem.createEl('span', {
+    this.statusBarItem.createSpan({
       text: message,
       cls: 'openaugi-status-text'
     });
     
     // Create dot animation container
-    this.loadingContainer = this.statusBarItem.createEl('span', {
+    this.loadingContainer = this.statusBarItem.createSpan({
       cls: 'openaugi-loading-dots'
     });
     
     // Create three dots for the animation
     for (let i = 0; i < 3; i++) {
-      const dot = this.loadingContainer.createEl('span', {
+      const dot = this.loadingContainer.createSpan({
         text: '.',
         cls: 'openaugi-dot'
       });
@@ -80,7 +79,7 @@ export class LoadingIndicator {
    */
   hide(): void {
     if (this.animationInterval) {
-      clearInterval(this.animationInterval);
+      window.clearInterval(this.animationInterval);
       this.animationInterval = null;
     }
     

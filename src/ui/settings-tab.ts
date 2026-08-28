@@ -2,6 +2,58 @@ import { App, PluginSettingTab, Setting, Notice, DropdownComponent } from 'obsid
 import type OpenAugiPlugin from '../types/plugin';
 import { OpenAIService } from '../services/openai-service';
 import { TerminalApp } from '../types/task-dispatch';
+import { isDataviewInstalled } from '../types/dataview';
+import { isSecretStorageAvailable } from '../utils/secret-storage';
+
+/** The slice of Electron's `dialog` module used by the folder picker. */
+interface ElectronDialog {
+  showOpenDialog(options: {
+    properties: string[];
+    title?: string;
+  }): Promise<{ canceled: boolean; filePaths: string[] }>;
+}
+
+interface ElectronModule {
+  dialog?: ElectronDialog;
+  remote?: { dialog?: ElectronDialog };
+}
+
+/**
+ * Resolve Electron's `dialog` module on desktop, or `null` elsewhere.
+ *
+ * Obsidian exposes Node's `require` on `window` in the desktop app only; on
+ * mobile it is absent and the folder picker degrades to manual path entry.
+ * Both the modern (`@electron/remote`) and legacy (`electron.remote`) module
+ * layouts are probed for compatibility across Obsidian versions.
+ */
+/**
+ * Run an async handler when an input loses focus.
+ *
+ * DOM listeners expect a `void` return, so the promise is explicitly
+ * discarded rather than handed to `addEventListener`.
+ */
+function onBlurAsync(el: HTMLElement, handler: () => Promise<void>): void {
+  el.addEventListener('blur', () => { void handler(); });
+}
+
+function getElectronDialog(): ElectronDialog | null {
+  const nodeRequire = (window as unknown as { require?: (id: string) => unknown }).require;
+  if (typeof nodeRequire !== 'function') {
+    return null;
+  }
+
+  for (const moduleId of ['@electron/remote', 'electron']) {
+    try {
+      const mod = nodeRequire(moduleId) as ElectronModule | undefined;
+      const dialog = mod?.dialog ?? mod?.remote?.dialog;
+      if (dialog) {
+        return dialog;
+      }
+    } catch { /* module not available in this Obsidian build */ }
+  }
+
+  return null;
+}
 // Lazy-imported: detectTmuxPath lives in task-dispatch-service which uses
 // Node.js modules unavailable on mobile.
 
@@ -20,7 +72,9 @@ export class OpenAugiSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('OpenAI API key')
-      .setDesc('Your OpenAI API key')
+      .setDesc(isSecretStorageAvailable(this.app)
+        ? 'Stored in your operating system\'s credential store, managed under Settings → Keychain.'
+        : 'Stored in this vault\'s plugin folder. Upgrade to Obsidian 1.11.4 or later to keep it in your OS credential store instead.')
       .addText(text => text
         .setPlaceholder('sk-...')
         .setValue(this.plugin.settings.apiKey)
@@ -33,7 +87,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
           if (inputEl) {
             this.plugin.settings.apiKey = inputEl.value;
             await this.plugin.saveSettings();
-            new Notice('API Key saved');
+            new Notice('API key saved');
             button.setButtonText('Update');
           }
         })
@@ -41,8 +95,8 @@ export class OpenAugiSettingTab extends PluginSettingTab {
 
     let modelDropdown: DropdownComponent;
 
-    const modelSetting = new Setting(containerEl)
-      .setName('OpenAI Model')
+    new Setting(containerEl)
+      .setName('OpenAI model')
       .setDesc('Select the OpenAI model to use for processing')
       .addDropdown(dropdown => {
         modelDropdown = dropdown;
@@ -58,7 +112,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
         } else if (models.length > 0) {
           dropdown.setValue(models[0]);
           this.plugin.settings.defaultModel = models[0];
-          this.plugin.saveSettings();
+          void this.plugin.saveSettings();
         }
         dropdown.onChange(async (value) => {
           this.plugin.settings.defaultModel = value;
@@ -66,7 +120,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
         });
       })
       .addButton(button => button
-        .setButtonText('Refresh Models')
+        .setButtonText('Refresh models')
         .setDisabled(!this.plugin.settings.apiKey)
         .onClick(async () => {
           if (!this.plugin.settings.apiKey) {
@@ -107,14 +161,14 @@ export class OpenAugiSettingTab extends PluginSettingTab {
             console.error('Failed to fetch models:', error);
             new Notice(`Failed to fetch models: ${error instanceof Error ? error.message : 'Unknown error'}`);
           } finally {
-            button.setButtonText('Refresh Models');
+            button.setButtonText('Refresh models');
             button.setDisabled(!this.plugin.settings.apiKey);
           }
         })
       );
 
     new Setting(containerEl)
-      .setName('Custom Model Override (Optional)')
+      .setName('Custom model override (optional)')
       .setDesc('Specify any OpenAI model name to override the selection above. Leave empty to use the selected model.')
       .addText(text => text
         .setPlaceholder('e.g., gpt-4o-2024-11-20')
@@ -134,7 +188,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.summaryFolder);
         
         // Save only when input loses focus
-        text.inputEl.addEventListener('blur', async () => {
+        onBlurAsync(text.inputEl, async () => {
           const value = text.getValue();
           if (value !== this.plugin.settings.summaryFolder) {
             this.plugin.settings.summaryFolder = value;
@@ -156,7 +210,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.notesFolder);
         
         // Save only when input loses focus
-        text.inputEl.addEventListener('blur', async () => {
+        onBlurAsync(text.inputEl, async () => {
           const value = text.getValue();
           if (value !== this.plugin.settings.notesFolder) {
             this.plugin.settings.notesFolder = value;
@@ -178,7 +232,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.promptsFolder);
 
         // Save only when input loses focus
-        text.inputEl.addEventListener('blur', async () => {
+        onBlurAsync(text.inputEl, async () => {
           const value = text.getValue();
           if (value !== this.plugin.settings.promptsFolder) {
             this.plugin.settings.promptsFolder = value;
@@ -198,7 +252,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.publishedFolder);
 
         // Save only when input loses focus
-        text.inputEl.addEventListener('blur', async () => {
+        onBlurAsync(text.inputEl, async () => {
           const value = text.getValue();
           if (value !== this.plugin.settings.publishedFolder) {
             this.plugin.settings.publishedFolder = value;
@@ -212,8 +266,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
       });
       
     // Check if Dataview plugin is installed
-    // @ts-ignore - Dataview API is not typed
-    const dataviewPluginInstalled = this.app.plugins.plugins["dataview"] !== undefined;
+    const dataviewPluginInstalled = isDataviewInstalled(this.app);
       
     new Setting(containerEl)
       .setName('Use Dataview plugin')
@@ -230,7 +283,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
       );
       
     // Recent Activity Settings Header
-    containerEl.createEl('h3', { text: 'Recent Activity Settings' });
+    new Setting(containerEl).setName('Recent activity').setHeading();
     
     new Setting(containerEl)
       .setName('Default days to look back')
@@ -288,7 +341,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
       );
       
     // Context Gathering Settings Header
-    containerEl.createEl('h3', { text: 'Context Gathering Settings' });
+    new Setting(containerEl).setName('Context gathering').setHeading();
 
     new Setting(containerEl)
       .setName('Default link depth')
@@ -354,7 +407,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
       );
 
     // Task Dispatch Settings Header
-    containerEl.createEl('h3', { text: 'Task Dispatch (deprecated)' });
+    new Setting(containerEl).setName('Task dispatch (deprecated)').setHeading();
     containerEl.createEl('p', {
       text: 'Task Dispatch launches tmux sessions directly from the plugin and is '
         + 'deprecated — it will be removed in a future release. Prefer the '
@@ -384,7 +437,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
         text
           .setPlaceholder('Auto-detect')
           .setValue(this.plugin.settings.taskDispatch.tmuxPath);
-        text.inputEl.addEventListener('blur', async () => {
+        onBlurAsync(text.inputEl, async () => {
           const value = text.getValue().trim();
           if (value !== this.plugin.settings.taskDispatch.tmuxPath) {
             this.plugin.settings.taskDispatch.tmuxPath = value;
@@ -416,7 +469,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
         text
           .setPlaceholder('~/projects')
           .setValue(this.plugin.settings.taskDispatch.defaultWorkingDir);
-        text.inputEl.addEventListener('blur', async () => {
+        onBlurAsync(text.inputEl, async () => {
           const value = text.getValue().trim();
           if (value !== this.plugin.settings.taskDispatch.defaultWorkingDir) {
             this.plugin.settings.taskDispatch.defaultWorkingDir = value;
@@ -427,7 +480,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
       });
 
     // --- Repo Paths ---
-    containerEl.createEl('h4', { text: 'Repository Paths' });
+    new Setting(containerEl).setName('Repository paths').setHeading();
     containerEl.createEl('p', {
       text: 'Map short names to repo folders. Use the name in frontmatter working_dir instead of typing full paths.',
       cls: 'setting-item-description'
@@ -471,7 +524,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
         text
           .setPlaceholder('/tmp/openaugi')
           .setValue(this.plugin.settings.taskDispatch.contextTempDir);
-        text.inputEl.addEventListener('blur', async () => {
+        onBlurAsync(text.inputEl, async () => {
           const value = text.getValue();
           if (value !== this.plugin.settings.taskDispatch.contextTempDir) {
             this.plugin.settings.taskDispatch.contextTempDir = value;
@@ -482,7 +535,7 @@ export class OpenAugiSettingTab extends PluginSettingTab {
       });
 
     // Advanced Settings Header
-    containerEl.createEl('h3', { text: 'Advanced Settings' });
+    new Setting(containerEl).setName('Advanced').setHeading();
 
     new Setting(containerEl)
       .setName('Enable distill logging')
@@ -508,8 +561,8 @@ export class OpenAugiSettingTab extends PluginSettingTab {
           text
             .setPlaceholder('Name (e.g. my-repo)')
             .setValue(rp.name);
-          text.inputEl.style.width = '120px';
-          text.inputEl.addEventListener('blur', async () => {
+          text.inputEl.addClass('openaugi-repo-name-input');
+          onBlurAsync(text.inputEl, async () => {
             const value = text.getValue().trim();
             if (value !== this.plugin.settings.taskDispatch.repoPaths[i].name) {
               this.plugin.settings.taskDispatch.repoPaths[i].name = value;
@@ -522,8 +575,8 @@ export class OpenAugiSettingTab extends PluginSettingTab {
           text
             .setPlaceholder('/absolute/path/to/repo')
             .setValue(rp.path);
-          text.inputEl.style.width = '280px';
-          text.inputEl.addEventListener('blur', async () => {
+          text.inputEl.addClass('openaugi-repo-path-input');
+          onBlurAsync(text.inputEl, async () => {
             const value = text.getValue().trim();
             if (value !== this.plugin.settings.taskDispatch.repoPaths[i].path) {
               this.plugin.settings.taskDispatch.repoPaths[i].path = value;
@@ -573,26 +626,10 @@ export class OpenAugiSettingTab extends PluginSettingTab {
 
   /**
    * Open the native OS folder picker via Electron's dialog API.
-   * Tries multiple Electron require paths for compatibility across Obsidian versions.
-   * Returns the selected path, or null if cancelled.
+   * Returns the selected path, or null if cancelled or unavailable.
    */
   private async pickFolder(): Promise<string | null> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let dialog: any = null;
-
-    try {
-      // Modern Obsidian / Electron: @electron/remote
-      dialog = require('@electron/remote')?.dialog;
-    } catch { /* not available */ }
-
-    if (!dialog) {
-      try {
-        // Older Electron: remote on the electron module
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const electron = require('electron');
-        dialog = (electron as any).remote?.dialog;
-      } catch { /* not available */ }
-    }
+    const dialog = getElectronDialog();
 
     if (!dialog) {
       new Notice('Folder picker not available — type the path manually.');

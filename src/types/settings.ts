@@ -1,4 +1,3 @@
-import { App } from 'obsidian';
 import { TaskDispatchSettings } from './task-dispatch';
 
 export interface RecentActivitySettings {

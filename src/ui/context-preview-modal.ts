@@ -26,7 +26,7 @@ export class ContextPreviewModal extends Modal {
     contentEl.empty();
     contentEl.addClass('openaugi-preview-modal');
 
-    contentEl.createEl('h2', { text: 'Context Preview' });
+    contentEl.createEl('h2', { text: 'Context preview' });
 
     contentEl.createEl('p', {
       text: 'Review the gathered context before processing or saving.',
@@ -34,15 +34,9 @@ export class ContextPreviewModal extends Modal {
     });
 
     // Summary stats
-    const statsEl = contentEl.createDiv({ cls: 'context-stats' });
-    statsEl.style.padding = '15px';
-    statsEl.style.marginBottom = '15px';
-    statsEl.style.backgroundColor = 'var(--background-secondary)';
-    statsEl.style.borderRadius = '5px';
+    const statsEl = contentEl.createDiv({ cls: 'openaugi-context-stats' });
 
-    const statsTitle = statsEl.createEl('h3', { text: '📊 Summary' });
-    statsTitle.style.marginTop = '0';
-    statsTitle.style.marginBottom = '10px';
+    statsEl.createEl('h3', { text: '📊 Summary', cls: 'openaugi-stats-title' });
 
     statsEl.createEl('p', {
       text: `Notes: ${this.context.totalNotes} notes`
@@ -64,60 +58,39 @@ export class ContextPreviewModal extends Modal {
     }
 
     // List of included notes
-    const notesListEl = contentEl.createDiv({ cls: 'notes-list' });
-    notesListEl.style.marginBottom = '15px';
+    const notesListEl = contentEl.createDiv({ cls: 'openaugi-notes-list' });
 
-    notesListEl.createEl('h3', { text: '📝 Included Notes' });
+    notesListEl.createEl('h3', { text: '📝 Included notes' });
 
-    const listEl = notesListEl.createEl('ul');
-    listEl.style.maxHeight = '150px';
-    listEl.style.overflowY = 'auto';
-    listEl.style.padding = '10px';
-    listEl.style.margin = '0';
-    listEl.style.backgroundColor = 'var(--background-primary-alt)';
-    listEl.style.borderRadius = '5px';
-    listEl.style.listStyle = 'none';
+    const listEl = notesListEl.createEl('ul', { cls: 'openaugi-note-items' });
 
     this.context.notes.forEach(note => {
-      const itemEl = listEl.createEl('li');
-      itemEl.style.padding = '5px';
-      itemEl.style.borderBottom = '1px solid var(--background-modifier-border)';
+      const itemEl = listEl.createEl('li', { cls: 'openaugi-note-item' });
 
-      const titleEl = itemEl.createEl('span');
-      titleEl.setText(note.file.basename);
-      titleEl.style.fontWeight = '500';
+      itemEl.createSpan({
+        text: note.file.basename,
+        cls: 'openaugi-note-item-title'
+      });
 
       if (note.depth > 0) {
-        const depthBadge = itemEl.createEl('span');
-        depthBadge.setText(` (L${note.depth})`);
-        depthBadge.style.fontSize = '0.85em';
-        depthBadge.style.color = 'var(--text-muted)';
-        depthBadge.style.marginLeft = '5px';
+        itemEl.createSpan({
+          text: ` (L${note.depth})`,
+          cls: 'openaugi-note-item-meta'
+        });
       }
 
-      const sizeEl = itemEl.createEl('span');
-      sizeEl.setText(` · ${(note.estimatedChars / 1000).toFixed(1)}k chars`);
-      sizeEl.style.fontSize = '0.85em';
-      sizeEl.style.color = 'var(--text-muted)';
-      sizeEl.style.marginLeft = '5px';
+      itemEl.createSpan({
+        text: ` · ${(note.estimatedChars / 1000).toFixed(1)}k chars`,
+        cls: 'openaugi-note-item-meta'
+      });
     });
 
     // Content preview (first 1000 chars)
-    const previewEl = contentEl.createDiv({ cls: 'content-preview' });
-    previewEl.style.marginBottom = '20px';
+    const previewEl = contentEl.createDiv({ cls: 'openaugi-content-preview' });
 
-    previewEl.createEl('h3', { text: '👁️ Content Preview' });
+    previewEl.createEl('h3', { text: '👁️ Content preview' });
 
-    const preText = previewEl.createEl('pre');
-    preText.style.maxHeight = '200px';
-    preText.style.overflowY = 'auto';
-    preText.style.padding = '10px';
-    preText.style.backgroundColor = 'var(--background-primary-alt)';
-    preText.style.border = '1px solid var(--background-modifier-border)';
-    preText.style.borderRadius = '5px';
-    preText.style.fontSize = '0.9em';
-    preText.style.whiteSpace = 'pre-wrap';
-    preText.style.wordWrap = 'break-word';
+    const preText = previewEl.createEl('pre', { cls: 'openaugi-preview-text' });
 
     const preview = this.context.aggregatedContent.substring(0, 1000);
     const hasMore = this.context.aggregatedContent.length > 1000;
@@ -130,7 +103,7 @@ export class ContextPreviewModal extends Modal {
         .onClick(() => this.close())
       )
       .addButton(button => button
-        .setButtonText('Copy to Clipboard')
+        .setButtonText('Copy to clipboard')
         .setTooltip('Copy the gathered context to clipboard')
         .onClick(async () => {
           await navigator.clipboard.writeText(this.context.aggregatedContent);
@@ -139,7 +112,7 @@ export class ContextPreviewModal extends Modal {
         })
       )
       .addButton(button => button
-        .setButtonText('Save Raw Context')
+        .setButtonText('Save raw context')
         .setTooltip('Save the gathered context as a note without AI processing')
         .onClick(() => {
           this.onSaveRaw();

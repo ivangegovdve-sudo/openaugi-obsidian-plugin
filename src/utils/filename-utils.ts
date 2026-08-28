@@ -72,7 +72,7 @@ export class BacklinkMapper {
    */
   processBacklinks(content: string): string {
     // Replace backlinks with their sanitized versions
-    return content.replace(/\[\[(.*?)\]\]/g, (match, title) => {
+    return content.replace(/\[\[(.*?)\]\]/g, (_match: string, title: string) => {
       const sanitizedTitle = this.titleToFilenameMap.get(title) || sanitizeFilename(title);
       return `[[${sanitizedTitle}]]`;
     });

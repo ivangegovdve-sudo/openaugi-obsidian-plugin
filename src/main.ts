@@ -1,5 +1,7 @@
 import { Plugin, Notice, TFile, Platform } from 'obsidian';
 import { OpenAugiSettings, DEFAULT_SETTINGS } from './types/settings';
+import { getErrorMessage } from './utils/errors';
+import { persistApiKey, resolveApiKey } from './utils/secret-storage';
 import { OpenAIService } from './services/openai-service';
 import { FileService } from './services/file-service';
 import { DistillService } from './services/distill-service';
@@ -63,7 +65,7 @@ export default class OpenAugiPlugin extends Plugin {
         if (activeFile && activeFile.extension === 'md') {
           await this.processTranscriptFile(activeFile);
         } else {
-          new Notice('Please open a markdown transcript file first');
+          new Notice('Please open a Markdown transcript file first');
         }
       }
     });
@@ -77,14 +79,14 @@ export default class OpenAugiPlugin extends Plugin {
         if (activeFile && activeFile.extension === 'md') {
           await this.distillLinkedNotes(activeFile);
         } else {
-          new Notice('Please open a markdown file first');
+          new Notice('Please open a Markdown file first');
         }
       }
     });
 
     // Add new unified context gathering commands
     this.addCommand({
-      id: 'openaugi-process-notes',
+      id: 'process-notes',
       name: 'Process notes',
       callback: async () => {
         await this.gatherAndProcessContext({
@@ -96,7 +98,7 @@ export default class OpenAugiPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: 'openaugi-process-recent',
+      id: 'process-recent-activity',
       name: 'Process recent activity',
       callback: async () => {
         await this.gatherAndProcessContext({
@@ -108,7 +110,7 @@ export default class OpenAugiPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: 'openaugi-save-context',
+      id: 'save-context',
       name: 'Save context',
       callback: async () => {
         await this.gatherAndProcessContext({
@@ -198,12 +200,13 @@ export default class OpenAugiPlugin extends Plugin {
           const modal = new SessionListModal(
             this.app,
             sessions,
-            async (session: TaskSession) => {
-              await this.taskDispatchService!.openTerminal(session.tmuxSessionName);
+            (session: TaskSession) => {
+              void this.taskDispatchService!.openTerminal(session.tmuxSessionName);
             },
-            async (session: TaskSession) => {
-              await this.taskDispatchService!.killSessionById(session.taskId);
-              new Notice(`Killed session: ${session.taskId}`);
+            (session: TaskSession) => {
+              void this.taskDispatchService!.killSessionById(session.taskId).then(() => {
+                new Notice(`Killed session: ${session.taskId}`);
+              });
             }
           );
           modal.open();
@@ -290,7 +293,7 @@ export default class OpenAugiPlugin extends Plugin {
     let context = selection;
     if (!context) {
       if (!activeFile || activeFile.extension !== 'md') {
-        new Notice('Select text or open a markdown note to distill');
+        new Notice('Select text or open a Markdown note to distill');
         return;
       }
       const raw = await this.app.vault.read(activeFile);
@@ -380,8 +383,8 @@ export default class OpenAugiPlugin extends Plugin {
     const modal = new PromptSelectionModal(
       this.app,
       this.settings.promptsFolder,
-      async (config: PromptSelectionConfig) => {
-        await this.executeDistillLinkedNotes(rootFile, config);
+      (config: PromptSelectionConfig) => {
+        void this.executeDistillLinkedNotes(rootFile, config);
       }
     );
     modal.open();
@@ -476,7 +479,7 @@ export default class OpenAugiPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const savedData = await this.loadData();
+    const savedData = await this.loadData() as Partial<OpenAugiSettings> | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, savedData);
 
     // Deep merge nested settings to pick up new defaults
@@ -501,12 +504,31 @@ export default class OpenAugiPlugin extends Plugin {
         savedData.taskDispatch
       );
     }
+
+    // On Obsidian 1.11.4+ the API key lives in the OS credential store rather
+    // than data.json. A key left over from an older version is migrated on
+    // first load, then re-saved so the plaintext copy is dropped.
+    const resolved = resolveApiKey(this.app, this.settings.apiKey);
+    this.settings.apiKey = resolved.apiKey;
+    if (resolved.migrated) {
+      await this.persistSettings();
+    }
   }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    await this.persistSettings();
     // Reinitialize services with new settings
     this.initializeServices();
+  }
+
+  /**
+   * Write settings to disk, routing the API key to secret storage where the
+   * running Obsidian version supports it. `this.settings.apiKey` always holds
+   * the effective key in memory; only the on-disk copy differs.
+   */
+  private async persistSettings(): Promise<void> {
+    const diskApiKey = persistApiKey(this.app, this.settings.apiKey);
+    await this.saveData({ ...this.settings, apiKey: diskApiKey });
   }
 
 
@@ -520,8 +542,8 @@ export default class OpenAugiPlugin extends Plugin {
       this.app,
       this.settings,
       this.contextGatheringService,
-      async (config: ContextGatheringConfig) => {
-        await this.executeContextGathering(config, options);
+      (config: ContextGatheringConfig) => {
+        void this.executeContextGathering(config, options);
       },
       options.defaultSourceMode,
       options.defaultDepth
@@ -556,15 +578,15 @@ export default class OpenAugiPlugin extends Plugin {
       const selectionModal = new ContextSelectionModal(
         this.app,
         gatheredContext.notes,
-        async (selectedNotes: DiscoveredNote[]) => {
-          await this.showContextPreview(gatheredContext, selectedNotes, options);
+        (selectedNotes: DiscoveredNote[]) => {
+          void this.showContextPreview(gatheredContext, selectedNotes, options);
         }
       );
       selectionModal.open();
     } catch (error) {
       this.loadingIndicator?.hide();
       console.error('Failed to gather context:', error);
-      new Notice('Failed to gather context: ' + error.message);
+      new Notice('Failed to gather context: ' + getErrorMessage(error));
     }
   }
 
@@ -614,12 +636,12 @@ export default class OpenAugiPlugin extends Plugin {
       const previewModal = new ContextPreviewModal(
         this.app,
         finalContext,
-        async () => await this.saveRawContext(finalContext),
-        async () => {
+        () => { void this.saveRawContext(finalContext); },
+        () => {
           if (options.commandType === 'save-raw') {
-            await this.saveRawContext(finalContext);
+            void this.saveRawContext(finalContext);
           } else {
-            await this.processContextWithAI(finalContext, options);
+            void this.processContextWithAI(finalContext, options);
           }
         },
         processButtonLabel
@@ -628,7 +650,7 @@ export default class OpenAugiPlugin extends Plugin {
     } catch (error) {
       this.loadingIndicator?.hide();
       console.error('Failed to preview context:', error);
-      new Notice('Failed to preview context: ' + error.message);
+      new Notice('Failed to preview context: ' + getErrorMessage(error));
     }
   }
 
@@ -679,7 +701,7 @@ export default class OpenAugiPlugin extends Plugin {
     } catch (error) {
       this.loadingIndicator?.hide();
       console.error('Failed to save raw context:', error);
-      new Notice('Failed to save context: ' + error.message);
+      new Notice('Failed to save context: ' + getErrorMessage(error));
     }
   }
 
@@ -696,8 +718,8 @@ export default class OpenAugiPlugin extends Plugin {
     const promptModal = new PromptSelectionModal(
       this.app,
       this.settings.promptsFolder,
-      async (promptConfig: PromptSelectionConfig) => {
-        await this.executeProcessing(context, promptConfig, options);
+      (promptConfig: PromptSelectionConfig) => {
+        void this.executeProcessing(context, promptConfig, options);
       },
       true,  // Show processing type selector
       'distill'  // Default to distill
@@ -744,7 +766,7 @@ export default class OpenAugiPlugin extends Plugin {
     } catch (error) {
       this.loadingIndicator?.hide();
       console.error('Failed to process context:', error);
-      new Notice('Failed to process context: ' + error.message);
+      new Notice('Failed to process context: ' + getErrorMessage(error));
     }
   }
 

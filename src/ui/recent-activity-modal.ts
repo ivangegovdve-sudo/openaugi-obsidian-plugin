@@ -1,4 +1,4 @@
-import { App, Modal, Setting, TFile, ToggleComponent, Notice } from 'obsidian';
+import { App, Modal, Setting, TFile, Notice } from 'obsidian';
 import { RecentActivitySettings } from '../types/settings';
 import { createFileWithCollisionHandling } from '../utils/filename-utils';
 
@@ -40,7 +40,7 @@ export class RecentActivityModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl('h2', { text: 'Configure Recent Activity Distillation' });
+    contentEl.createEl('h2', { text: 'Configure recent activity distillation' });
 
     // Date range toggle
     new Setting(contentEl)
@@ -182,43 +182,34 @@ export class RecentActivityModal extends Modal {
       );
 
     // Preview button to show/refresh the notes list
-    const previewSetting = new Setting(contentEl)
+    new Setting(contentEl)
       .setName('Select notes to include')
       .setDesc('Choose which notes to include in the distillation')
       .addButton(button => {
         this.previewButton = button.buttonEl;
         button
-          .setButtonText('Select Notes')
+          .setButtonText('Select notes')
           .onClick(async () => {
-            if (this.notesListEl && this.notesListEl.style.display !== 'none') {
+            if (this.notesListEl && !this.notesListEl.hasClass('openaugi-hidden')) {
               // Hide the list
-              this.notesListEl.style.display = 'none';
-              button.setButtonText('Select Notes');
+              this.notesListEl.addClass('openaugi-hidden');
+              button.setButtonText('Select notes');
             } else {
               // Show/update the list
               await this.updateNotesList();
-              if (this.notesListEl) {
-                this.notesListEl.style.display = 'block';
-              }
-              button.setButtonText('Hide Selection');
+              this.notesListEl?.removeClass('openaugi-hidden');
+              button.setButtonText('Hide selection');
             }
           });
       });
 
     // Container for the notes list (initially hidden)
-    this.notesListEl = contentEl.createDiv('recent-notes-list');
-    this.notesListEl.style.display = 'none';
-    this.notesListEl.style.maxHeight = '300px';
-    this.notesListEl.style.overflowY = 'auto';
-    this.notesListEl.style.border = '1px solid var(--background-modifier-border)';
-    this.notesListEl.style.borderRadius = '4px';
-    this.notesListEl.style.padding = '10px';
-    this.notesListEl.style.marginBottom = '20px';
+    this.notesListEl = contentEl.createDiv('openaugi-recent-notes-list openaugi-hidden');
 
     // Action buttons
     new Setting(contentEl)
       .addButton(button => button
-        .setButtonText('Save as Collection')
+        .setButtonText('Save as collection')
         .onClick(async () => {
           await this.saveAsCollection();
         })
@@ -248,7 +239,7 @@ export class RecentActivityModal extends Modal {
     this.notesListEl.empty();
 
     // Show loading
-    this.notesListEl.createEl('div', { 
+    this.notesListEl.createDiv({ 
       text: 'Loading recent notes...', 
       cls: 'loading-text' 
     });
@@ -264,7 +255,7 @@ export class RecentActivityModal extends Modal {
       this.notesListEl.empty();
 
       if (files.length === 0) {
-        this.notesListEl.createEl('div', { 
+        this.notesListEl.createDiv({ 
           text: 'No notes found in the specified time range.', 
           cls: 'no-notes-text' 
         });
@@ -272,10 +263,7 @@ export class RecentActivityModal extends Modal {
       }
 
       // Create header with select all
-      const headerEl = this.notesListEl.createDiv('notes-list-header');
-      headerEl.style.marginBottom = '10px';
-      headerEl.style.paddingBottom = '10px';
-      headerEl.style.borderBottom = '1px solid var(--background-modifier-border)';
+      const headerEl = this.notesListEl.createDiv('openaugi-notes-list-header');
       
       // Create descriptive header text
       let headerText: string;
@@ -285,7 +273,7 @@ export class RecentActivityModal extends Modal {
         headerText = `Found ${files.length} notes (last ${this.config.daysBack} days)`;
       }
       
-      const selectAllSetting = new Setting(headerEl)
+      new Setting(headerEl)
         .setName(headerText)
         .addToggle(toggle => toggle
           .setValue(true)
@@ -316,10 +304,9 @@ export class RecentActivityModal extends Modal {
       // Create individual note items
       const listEl = this.notesListEl.createDiv('notes-items');
       this.noteSelections.forEach((noteSelection, index) => {
-        const itemEl = listEl.createDiv('note-item');
-        itemEl.style.marginBottom = '8px';
-        
-        const itemSetting = new Setting(itemEl)
+        const itemEl = listEl.createDiv('openaugi-note-item');
+
+        new Setting(itemEl)
           .setClass('note-item-setting')
           .setName(noteSelection.file.basename)
           .setDesc(this.formatNoteInfo(noteSelection))
@@ -342,7 +329,7 @@ export class RecentActivityModal extends Modal {
     } catch (error) {
       console.error('Error loading recent notes:', error);
       this.notesListEl.empty();
-      this.notesListEl.createEl('div', { 
+      this.notesListEl.createDiv({ 
         text: 'Error loading notes. Check console for details.', 
         cls: 'error-text' 
       });
@@ -360,17 +347,10 @@ export class RecentActivityModal extends Modal {
   private refreshDateInputs(): void {
     if (!this.daysBackSetting || !this.fromDateSetting || !this.toDateSetting) return;
     
-    if (this.config.useDateRange) {
-      // Hide days back, show date range
-      this.daysBackSetting.settingEl.style.display = 'none';
-      this.fromDateSetting.settingEl.style.display = '';
-      this.toDateSetting.settingEl.style.display = '';
-    } else {
-      // Show days back, hide date range
-      this.daysBackSetting.settingEl.style.display = '';
-      this.fromDateSetting.settingEl.style.display = 'none';
-      this.toDateSetting.settingEl.style.display = 'none';
-    }
+    const useRange = this.config.useDateRange ?? false;
+    this.daysBackSetting.settingEl.toggleClass('openaugi-hidden', useRange);
+    this.fromDateSetting.settingEl.toggleClass('openaugi-hidden', !useRange);
+    this.toDateSetting.settingEl.toggleClass('openaugi-hidden', !useRange);
   }
 
   private isValidDate(dateStr: string): boolean {

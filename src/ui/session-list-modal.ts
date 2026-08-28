@@ -21,7 +21,7 @@ export class SessionListModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h2', { text: 'Active Task Sessions' });
+    contentEl.createEl('h2', { text: 'Active task sessions' });
 
     if (this.sessions.length === 0) {
       contentEl.createEl('p', { text: 'No active task sessions found.' });

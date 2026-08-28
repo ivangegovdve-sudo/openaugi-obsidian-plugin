@@ -9,7 +9,7 @@ export interface BaseResponse {
   tasks: string[];
 }
 
-export interface TranscriptResponse extends BaseResponse {}
+export type TranscriptResponse = BaseResponse;
 
 export interface DistillResponse extends BaseResponse {
   sourceNotes: string[]; // List of source note names that were distilled

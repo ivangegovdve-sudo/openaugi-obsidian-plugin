@@ -28,7 +28,7 @@ export class ContextSelectionModal extends Modal {
     contentEl.empty();
     contentEl.addClass('openaugi-selection-modal');
 
-    contentEl.createEl('h2', { text: 'Select Notes to Include' });
+    contentEl.createEl('h2', { text: 'Select notes to include' });
 
     contentEl.createEl('p', {
       text: 'Review and select which notes to include in the gathered context.',
@@ -36,18 +36,14 @@ export class ContextSelectionModal extends Modal {
     });
 
     // Summary stats
-    this.summaryEl = contentEl.createDiv({ cls: 'selection-summary' });
-    this.summaryEl.style.padding = '10px';
-    this.summaryEl.style.marginBottom = '15px';
-    this.summaryEl.style.backgroundColor = 'var(--background-secondary)';
-    this.summaryEl.style.borderRadius = '5px';
+    this.summaryEl = contentEl.createDiv({ cls: 'openaugi-selection-summary' });
     this.updateSummary();
 
     // Select all / Deselect all buttons
     new Setting(contentEl)
       .setName('Quick actions')
       .addButton(button => button
-        .setButtonText('Select All')
+        .setButtonText('Select all')
         .onClick(() => {
           this.discoveredNotes.forEach(note => {
             this.checkboxStates.set(note.file.path, true);
@@ -56,7 +52,7 @@ export class ContextSelectionModal extends Modal {
         })
       )
       .addButton(button => button
-        .setButtonText('Deselect All')
+        .setButtonText('Deselect all')
         .onClick(() => {
           this.discoveredNotes.forEach(note => {
             this.checkboxStates.set(note.file.path, false);
@@ -66,13 +62,7 @@ export class ContextSelectionModal extends Modal {
       );
 
     // Scrollable list of checkboxes
-    const listContainer = contentEl.createDiv({ cls: 'note-list-container' });
-    listContainer.style.maxHeight = '400px';
-    listContainer.style.overflowY = 'auto';
-    listContainer.style.border = '1px solid var(--background-modifier-border)';
-    listContainer.style.padding = '10px';
-    listContainer.style.marginBottom = '20px';
-    listContainer.style.borderRadius = '5px';
+    const listContainer = contentEl.createDiv({ cls: 'openaugi-note-list-container' });
 
     this.renderNoteListInContainer(listContainer);
 
@@ -127,46 +117,29 @@ export class ContextSelectionModal extends Modal {
 
       // Depth header
       if (sortedDepths.length > 1 && depth > 0) {
-        const depthHeader = listContainer.createEl('div', {
-          cls: 'depth-header',
+        listContainer.createDiv({
+          cls: 'openaugi-depth-header',
           text: `📁 Level ${depth}`
         });
-        depthHeader.style.fontWeight = 'bold';
-        depthHeader.style.marginTop = depth > 0 ? '15px' : '0';
-        depthHeader.style.marginBottom = '5px';
-        depthHeader.style.color = 'var(--text-muted)';
       } else if (depth === 0 && sortedDepths.length > 1) {
-        const depthHeader = listContainer.createEl('div', {
-          cls: 'depth-header',
-          text: '📄 Root Note'
+        listContainer.createDiv({
+          cls: 'openaugi-depth-header openaugi-depth-header-root',
+          text: '📄 Root note'
         });
-        depthHeader.style.fontWeight = 'bold';
-        depthHeader.style.marginBottom = '5px';
-        depthHeader.style.color = 'var(--text-muted)';
       }
 
       // Notes at this depth
       notes.forEach(note => {
-        const noteEl = listContainer.createDiv({ cls: 'note-item' });
-        noteEl.style.display = 'flex';
-        noteEl.style.alignItems = 'center';
-        noteEl.style.padding = '8px';
-        noteEl.style.marginLeft = `${depth * 20}px`;  // Indent by depth
-        noteEl.style.borderRadius = '3px';
-        noteEl.style.cursor = 'pointer';
+        const noteEl = listContainer.createDiv({ cls: 'openaugi-note-row' });
+        // Indentation is the only per-note dynamic style, so it goes through a
+        // custom property rather than a hardcoded class.
+        noteEl.setCssProps({ '--openaugi-note-indent': `${depth * 20}px` });
 
-        // Hover effect
-        noteEl.addEventListener('mouseenter', () => {
-          noteEl.style.backgroundColor = 'var(--background-secondary-alt)';
+        const checkbox = noteEl.createEl('input', {
+          type: 'checkbox',
+          cls: 'openaugi-note-checkbox'
         });
-        noteEl.addEventListener('mouseleave', () => {
-          noteEl.style.backgroundColor = 'transparent';
-        });
-
-        const checkbox = noteEl.createEl('input', { type: 'checkbox' });
         checkbox.checked = this.checkboxStates.get(note.file.path) || false;
-        checkbox.style.marginRight = '10px';
-        checkbox.style.cursor = 'pointer';
         checkbox.addEventListener('change', () => {
           this.checkboxStates.set(note.file.path, checkbox.checked);
           this.updateSummary();
@@ -181,49 +154,38 @@ export class ContextSelectionModal extends Modal {
           }
         });
 
-        const contentDiv = noteEl.createDiv();
-        contentDiv.style.flex = '1';
-        contentDiv.style.display = 'flex';
-        contentDiv.style.flexDirection = 'column';
-        contentDiv.style.gap = '2px';
+        const contentDiv = noteEl.createDiv({ cls: 'openaugi-note-body' });
 
-        const titleRow = contentDiv.createDiv();
-        titleRow.style.display = 'flex';
-        titleRow.style.alignItems = 'center';
-        titleRow.style.gap = '8px';
+        const titleRow = contentDiv.createDiv({ cls: 'openaugi-note-title-row' });
 
-        const titleEl = titleRow.createEl('span');
-        titleEl.setText(note.file.basename);
-        titleEl.style.fontWeight = '500';
+        titleRow.createSpan({
+          text: note.file.basename,
+          cls: 'openaugi-note-item-title'
+        });
 
         // Backlink indicator badge
         if (note.isBacklink) {
-          const backlinkBadge = titleRow.createEl('span');
-          backlinkBadge.setText('← backlink');
-          backlinkBadge.style.fontSize = '0.75em';
-          backlinkBadge.style.padding = '2px 6px';
-          backlinkBadge.style.borderRadius = '10px';
-          backlinkBadge.style.backgroundColor = 'var(--interactive-accent)';
-          backlinkBadge.style.color = 'var(--text-on-accent)';
-          backlinkBadge.style.fontWeight = 'normal';
+          titleRow.createSpan({
+            text: '← backlink',
+            cls: 'openaugi-backlink-badge'
+          });
         }
 
-        const metaEl = contentDiv.createEl('span');
-        metaEl.style.fontSize = '0.85em';
-        metaEl.style.color = 'var(--text-muted)';
         const sizeKb = (note.estimatedChars / 1000).toFixed(1);
         const contentType = note.isBacklink ? 'snippet' : 'full note';
-        metaEl.setText(`${sizeKb}k chars (${contentType}) · ${note.discoveredVia}`);
+        contentDiv.createSpan({
+          text: `${sizeKb}k chars (${contentType}) · ${note.discoveredVia}`,
+          cls: 'openaugi-note-item-meta'
+        });
       });
     });
 
     // Show message if no notes
     if (this.discoveredNotes.length === 0) {
-      const emptyEl = listContainer.createEl('div');
-      emptyEl.style.textAlign = 'center';
-      emptyEl.style.padding = '20px';
-      emptyEl.style.color = 'var(--text-muted)';
-      emptyEl.setText('No notes discovered');
+      listContainer.createDiv({
+        cls: 'openaugi-empty-state',
+        text: 'No notes discovered'
+      });
     }
   }
 

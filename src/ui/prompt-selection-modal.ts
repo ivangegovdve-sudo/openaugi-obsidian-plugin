@@ -35,7 +35,7 @@ export class PromptSelectionModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl('h2', { text: 'Process Context' });
+    contentEl.createEl('h2', { text: 'Process context' });
 
     contentEl.createEl('p', {
       text: 'Configure how to process the gathered context with AI.',
@@ -68,8 +68,9 @@ export class PromptSelectionModal extends Modal {
       });
     } else {
       // Show preview of selected prompt
-      const previewEl = contentEl.createDiv({ cls: 'openaugi-prompt-preview' });
-      previewEl.style.display = 'none';
+      const previewEl = contentEl.createDiv({
+        cls: 'openaugi-prompt-preview openaugi-hidden'
+      });
 
       // Create dropdown for prompt selection
       new Setting(contentEl)
@@ -86,12 +87,12 @@ export class PromptSelectionModal extends Modal {
             if (value) {
               this.config.useCustomPrompt = true;
               this.config.selectedPrompt = this.availablePrompts.find(p => p.path === value);
-              previewEl.style.display = 'block';
+              previewEl.removeClass('openaugi-hidden');
               await this.updatePreview(previewEl);
             } else {
               this.config.useCustomPrompt = false;
               this.config.selectedPrompt = undefined;
-              previewEl.style.display = 'none';
+              previewEl.addClass('openaugi-hidden');
             }
           });
         });
@@ -147,7 +148,7 @@ export class PromptSelectionModal extends Modal {
           text: preview,
           cls: 'openaugi-prompt-preview-content'
         });
-      } catch (error) {
+      } catch {
         previewEl.createEl('p', { 
           text: 'Unable to preview prompt',
           cls: 'openaugi-prompt-error'

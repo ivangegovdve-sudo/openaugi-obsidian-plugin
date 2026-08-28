@@ -179,8 +179,6 @@ export class ContextGatheringService {
         backlinkSnippet: isBacklink ? snippetContent : undefined
       });
 
-      console.log(`[OpenAugi] Discovered: ${file.basename} | isBacklink: ${isBacklink} | via: ${via} | depth: ${depth}`);
-
       totalChars += chars;
 
       // If we haven't reached max depth, get links from this note
