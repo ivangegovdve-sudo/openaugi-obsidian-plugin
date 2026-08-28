@@ -174,26 +174,26 @@ describe('TaskDispatchService', () => {
 
   // ─── getWorkingDir ───────────────────────────────────────────────────────
 
-  describe('getWorkingDir', () => {
-    const getWorkingDir = (file: TFile) => (service as any).getWorkingDir(file);
+  describe('getWorkingDir', async () => {
+    const getWorkingDir = (file: TFile): Promise<string> => (service as any).getWorkingDir(file);
 
-    it('uses working_dir frontmatter as absolute path', () => {
+    it('uses working_dir frontmatter as absolute path', async () => {
       const file = new TFile('Notes/Task.md');
       app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { working_dir: '/absolute/path' },
       });
-      expect(getWorkingDir(file)).toBe('/absolute/path');
+      expect(await getWorkingDir(file)).toBe('/absolute/path');
     });
 
-    it('uses working-dir (hyphenated) frontmatter', () => {
+    it('uses working-dir (hyphenated) frontmatter', async () => {
       const file = new TFile('Notes/Task.md');
       app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { 'working-dir': '/other/path' },
       });
-      expect(getWorkingDir(file)).toBe('/other/path');
+      expect(await getWorkingDir(file)).toBe('/other/path');
     });
 
-    it('resolves named repo path from frontmatter', () => {
+    it('resolves named repo path from frontmatter', async () => {
       settings.taskDispatch.repoPaths = [
         { name: 'my-repo', path: '/Users/chris/repos/my-repo' },
       ];
@@ -203,42 +203,42 @@ describe('TaskDispatchService', () => {
       app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { working_dir: 'my-repo' },
       });
-      expect(getWorkingDir(file)).toBe('/Users/chris/repos/my-repo');
+      expect(await getWorkingDir(file)).toBe('/Users/chris/repos/my-repo');
     });
 
-    it('resolves relative path against vault root', () => {
+    it('resolves relative path against vault root', async () => {
       const file = new TFile('Notes/Task.md');
       app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { working_dir: 'projects/foo' },
       });
-      expect(getWorkingDir(file)).toBe('/Users/chris/vault/projects/foo');
+      expect(await getWorkingDir(file)).toBe('/Users/chris/vault/projects/foo');
     });
 
-    it('falls back to defaultWorkingDir setting', () => {
+    it('falls back to defaultWorkingDir setting', async () => {
       const file = new TFile('Notes/Task.md');
       app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
       settings.taskDispatch.defaultWorkingDir = '/default/dir';
       service = new TaskDispatchService(app as any, settings, distillService as any);
 
-      expect(getWorkingDir(file)).toBe('/default/dir');
+      expect(await getWorkingDir(file)).toBe('/default/dir');
     });
 
-    it('resolves relative defaultWorkingDir against vault root', () => {
+    it('resolves relative defaultWorkingDir against vault root', async () => {
       const file = new TFile('Notes/Task.md');
       app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
       settings.taskDispatch.defaultWorkingDir = 'OpenAugi/Tasks';
       service = new TaskDispatchService(app as any, settings, distillService as any);
 
-      expect(getWorkingDir(file)).toBe('/Users/chris/vault/OpenAugi/Tasks');
+      expect(await getWorkingDir(file)).toBe('/Users/chris/vault/OpenAugi/Tasks');
     });
 
-    it('falls back to HOME when no working dir configured', () => {
+    it('falls back to HOME when no working dir configured', async () => {
       const file = new TFile('Notes/Task.md');
       app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
       settings.taskDispatch.defaultWorkingDir = '';
       service = new TaskDispatchService(app as any, settings, distillService as any);
 
-      expect(getWorkingDir(file)).toBe(process.env.HOME);
+      expect(await getWorkingDir(file)).toBe(process.env.HOME);
     });
   });
 
@@ -378,12 +378,12 @@ describe('TaskDispatchService', () => {
       const filePath = path.join(tmpDir, 'task-cleanup-test-context.md');
       expect(fs.existsSync(filePath)).toBe(true);
 
-      (service as any).cleanupContextFile('cleanup-test');
+      await (service as any).cleanupContextFile('cleanup-test');
       expect(fs.existsSync(filePath)).toBe(false);
     });
 
-    it('cleanupContextFile does not throw for missing file', () => {
-      expect(() => (service as any).cleanupContextFile('nonexistent')).not.toThrow();
+    it('cleanupContextFile does not throw for missing file', async () => {
+      await expect((service as any).cleanupContextFile('nonexistent')).resolves.toBeUndefined();
     });
   });
 

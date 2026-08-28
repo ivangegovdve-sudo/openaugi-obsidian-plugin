@@ -1,13 +1,52 @@
-import { App, TFile, Notice, FileSystemAdapter } from 'obsidian';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import * as fs from 'fs';
-import * as path from 'path';
+import { App, TFile, Notice, FileSystemAdapter, Platform } from 'obsidian';
 import { OpenAugiSettings } from '../types/settings';
 import { DistillService } from './distill-service';
 import { AgentConfig, RepoPath, TaskSession } from '../types/task-dispatch';
 
-const execAsync = promisify(exec);
+/** The Node.js surface task dispatch needs. Desktop only. */
+interface NodeApis {
+  execAsync: (
+    command: string,
+    options?: { env?: Record<string, string | undefined> }
+  ) => Promise<{ stdout: string; stderr: string }>;
+  fs: typeof import('node:fs');
+  path: typeof import('node:path');
+  env: Record<string, string | undefined>;
+}
+
+let cachedNodeApis: NodeApis | null = null;
+
+/**
+ * Lazily load the Node.js APIs task dispatch depends on.
+ *
+ * Task dispatch shells out to tmux and writes temp files, so it only works in
+ * the desktop app. The imports are dynamic and guarded by `Platform.isDesktop`
+ * so the plugin bundle still loads on mobile, where Node built-ins do not
+ * exist.
+ */
+async function loadNodeApis(): Promise<NodeApis> {
+  if (!Platform.isDesktop) {
+    throw new Error('Task dispatch is only available in the Obsidian desktop app.');
+  }
+
+  if (cachedNodeApis) return cachedNodeApis;
+
+  const [childProcess, util, fs, path, nodeProcess] = await Promise.all([
+    import('node:child_process'),
+    import('node:util'),
+    import('node:fs'),
+    import('node:path'),
+    import('node:process'),
+  ]);
+
+  cachedNodeApis = {
+    execAsync: util.promisify(childProcess.exec),
+    fs,
+    path,
+    env: nodeProcess.env,
+  };
+  return cachedNodeApis;
+}
 
 /** Common locations where Homebrew installs tmux. */
 const TMUX_SEARCH_PATHS = [
@@ -21,6 +60,8 @@ const TMUX_SEARCH_PATHS = [
  * Returns the absolute path if found, or null.
  */
 export async function detectTmuxPath(): Promise<string | null> {
+  const { fs, execAsync, env } = await loadNodeApis();
+
   for (const p of TMUX_SEARCH_PATHS) {
     try {
       await fs.promises.access(p, fs.constants.X_OK);
@@ -31,8 +72,8 @@ export async function detectTmuxPath(): Promise<string | null> {
   try {
     const { stdout } = await execAsync('which tmux', {
       env: {
-        ...process.env,
-        PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? '/usr/bin:/bin'}`,
+        ...env,
+        PATH: `/opt/homebrew/bin:/usr/local/bin:${env.PATH ?? '/usr/bin:/bin'}`,
       },
     });
     const found = stdout.trim();
@@ -104,7 +145,7 @@ export class TaskDispatchService {
         const contextContent = await this.assembleContext(file, taskId);
         const contextFilePath = await this.writeContextFile(taskId, contextContent);
 
-        const workingDir = this.getWorkingDir(file);
+        const workingDir = await this.getWorkingDir(file);
         await this.createTmuxSession(tmux, sessionName, agentConfig, contextFilePath, workingDir);
         await this.openTerminal(sessionName);
       }
@@ -135,8 +176,9 @@ export class TaskDispatchService {
         return;
       }
 
+      const { execAsync } = await loadNodeApis();
       await execAsync(`${tmux} kill-session -t ${this.shellEscape(sessionName)}`);
-      this.cleanupContextFile(taskId);
+      await this.cleanupContextFile(taskId);
 
       new Notice(`Killed session: ${taskId}`);
     } catch (error) {
@@ -152,8 +194,9 @@ export class TaskDispatchService {
     const sessionName = `task-${taskId}`;
     try {
       const tmux = await this.getTmux();
+      const { execAsync } = await loadNodeApis();
       await execAsync(`${tmux} kill-session -t ${this.shellEscape(sessionName)}`);
-      this.cleanupContextFile(taskId);
+      await this.cleanupContextFile(taskId);
     } catch (error) {
       console.error('Failed to kill session:', error);
       throw error;
@@ -166,6 +209,7 @@ export class TaskDispatchService {
   async listActiveSessions(): Promise<TaskSession[]> {
     try {
       const tmux = await this.getTmux();
+      const { execAsync } = await loadNodeApis();
       const { stdout } = await execAsync(
         `${tmux} list-sessions -F "#{session_name} #{session_created}" 2>/dev/null`
       );
@@ -219,6 +263,7 @@ export class TaskDispatchService {
     }
 
     try {
+      const { execAsync } = await loadNodeApis();
       await execAsync(`osascript -e '${osascript}'`);
     } catch (error) {
       console.error('Failed to open terminal:', error);
@@ -234,23 +279,25 @@ export class TaskDispatchService {
   private getTaskId(file: TFile): string | null {
     const cache = this.app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter;
-    const taskId = fm?.['task_id'] || fm?.['task-id'];
-    return taskId ? String(taskId) : null;
+    const taskId: unknown = fm?.['task_id'] ?? fm?.['task-id'];
+    return typeof taskId === 'string' || typeof taskId === 'number' ? String(taskId) : null;
   }
 
   /**
    * Resolve the working directory for a task session.
    * Priority: `working_dir` frontmatter → defaultWorkingDir setting → home dir.
    */
-  private getWorkingDir(file: TFile): string {
+  private async getWorkingDir(file: TFile): Promise<string> {
     const cache = this.app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter;
-    const workingDir = fm?.['working_dir'] || fm?.['working-dir'];
+    const workingDir: unknown = fm?.['working_dir'] ?? fm?.['working-dir'];
 
     if (workingDir && typeof workingDir === 'string') {
       // 1. Check if it matches a named repo path
       const repoMatch = resolveRepoPath(workingDir, this.settings.taskDispatch.repoPaths);
       if (repoMatch) return repoMatch;
+
+      const { path } = await loadNodeApis();
 
       // 2. Absolute path — use as-is
       if (path.isAbsolute(workingDir)) return workingDir;
@@ -261,15 +308,18 @@ export class TaskDispatchService {
 
     const defaultDir = this.settings.taskDispatch.defaultWorkingDir;
     if (defaultDir) {
+      const { path } = await loadNodeApis();
       return path.isAbsolute(defaultDir) ? defaultDir : this.resolveVaultPath(defaultDir);
     }
 
-    return process.env.HOME ?? '/tmp';
+    const { env } = await loadNodeApis();
+    return env.HOME ?? '/tmp';
   }
 
   private resolveVaultPath(relative: string): string {
     const adapter = this.app.vault.adapter as FileSystemAdapter;
-    return path.join(adapter.getBasePath(), relative);
+    const basePath = adapter.getBasePath().replace(/\/+$/, '');
+    return `${basePath}/${relative.replace(/^\/+/, '')}`;
   }
 
   private async assembleContext(file: TFile, taskId: string): Promise<string> {
@@ -304,6 +354,7 @@ export class TaskDispatchService {
   }
 
   private async writeContextFile(taskId: string, content: string): Promise<string> {
+    const { fs, path } = await loadNodeApis();
     const dir = this.settings.taskDispatch.contextTempDir;
     const filePath = path.join(dir, `task-${taskId}-context.md`);
 
@@ -315,12 +366,13 @@ export class TaskDispatchService {
     return filePath;
   }
 
-  private cleanupContextFile(taskId: string): void {
-    const filePath = path.join(
-      this.settings.taskDispatch.contextTempDir,
-      `task-${taskId}-context.md`
-    );
+  private async cleanupContextFile(taskId: string): Promise<void> {
     try {
+      const { fs, path } = await loadNodeApis();
+      const filePath = path.join(
+        this.settings.taskDispatch.contextTempDir,
+        `task-${taskId}-context.md`
+      );
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
@@ -331,6 +383,7 @@ export class TaskDispatchService {
 
   private async tmuxSessionExists(tmux: string, sessionName: string): Promise<boolean> {
     try {
+      const { execAsync } = await loadNodeApis();
       await execAsync(`${tmux} has-session -t ${this.shellEscape(sessionName)} 2>/dev/null`);
       return true;
     } catch {
@@ -345,6 +398,8 @@ export class TaskDispatchService {
     contextFilePath: string,
     workingDir: string
   ): Promise<void> {
+    const { execAsync, fs } = await loadNodeApis();
+
     // Ensure the working directory exists before launching the session.
     await fs.promises.mkdir(workingDir, { recursive: true });
 
@@ -386,8 +441,9 @@ export class TaskDispatchService {
    */
   private async waitForShellReady(tmux: string, sessionName: string, maxAttempts = 10): Promise<void> {
     for (let i = 0; i < maxAttempts; i++) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => window.setTimeout(resolve, 200));
       try {
+        const { execAsync } = await loadNodeApis();
         const { stdout } = await execAsync(
           `${tmux} capture-pane -t ${this.shellEscape(sessionName)} -p`
         );
