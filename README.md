@@ -5,7 +5,7 @@ OpenAugi is a context engineering layer and personal agent harness for your data
 
 Your vault is full of plans, decisions, research, and context. OpenAugi makes that context available to agents so they can actually do useful work.
 
-Works with the [OpenAugi MCP server](https://github.com/bitsofchris/openaugi) for semantic search, hub discovery, and structured access to your vault data. (MCP server coming soon.)
+Works with the [OpenAugi MCP server](https://github.com/bitsofchris/openaugi) for semantic search, hub discovery, and structured access to your vault data.
 
 Join the [Discord](https://discord.gg/d26BVBrnRP). Parent [repo](https://github.com/bitsofchris/openaugi).
 
@@ -149,6 +149,41 @@ Settings are in **Settings → OpenAugi**.
 - Days to look back (default: 7)
 - Date header format
 - Folder exclusions
+
+---
+
+## Network use and privacy
+
+OpenAugi makes network requests to exactly one external service, and only when
+you explicitly run an AI command.
+
+**Endpoint:** `https://api.openai.com`
+
+| Request | When it runs | What is sent |
+|---------|--------------|--------------|
+| `GET /v1/models` | You open settings or press **Refresh models** | Your API key only |
+| `POST /v1/chat/completions` | **Parse transcript** | Your API key and the transcript note's content |
+| `POST /v1/chat/completions` | **Distill** (Process notes / Process recent activity) | Your API key and the gathered note content you reviewed and approved |
+| `POST /v1/chat/completions` | **Publish** | Your API key and the gathered note content you reviewed and approved |
+
+No request is made without a direct command from you. Every distill and publish
+run shows a preview of the exact content before it is sent, and you can cancel
+or save it locally instead.
+
+- On Obsidian 1.11.4 and later your OpenAI API key is stored in your operating
+  system's credential store (macOS Keychain, Windows Credential Manager, Linux
+  libsecret) and is visible under **Settings → Keychain**. On older versions it
+  falls back to the plugin's `data.json`. An existing key is migrated
+  automatically the first time you open the plugin on a supporting version.
+  Because OS credential stores don't sync between devices, you enter the key
+  once per device.
+- The key is sent only to `api.openai.com`, as an `Authorization` header.
+- Note content is sent to OpenAI for processing under
+  [OpenAI's API data usage policy](https://openai.com/policies/api-data-usage-policies).
+- Nothing is sent anywhere else: no telemetry, no analytics, no author-operated
+  servers.
+- The **Save context** command and the Augi agent-task commands make no network
+  requests at all.
 
 ---
 

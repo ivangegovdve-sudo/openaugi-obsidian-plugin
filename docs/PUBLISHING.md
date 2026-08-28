@@ -58,6 +58,7 @@ you tag.
 ## Pre-release checklist
 
 - [ ] Features/fixes merged to master; `git status` clean; local == `origin/master`
+- [ ] `npm run lint` reports **0 errors** — see [COMPLIANCE.md](COMPLIANCE.md)
 - [ ] `npm test` passes (includes the version-consistency guard) — see [TESTING.md](TESTING.md)
 - [ ] `npm run build` clean (tsc + esbuild)
 - [ ] Manually tested in a real vault (`npm run dev`, reload plugin, exercise the change)
@@ -87,7 +88,7 @@ before publishing:
 ```bash
 # 1. Bump ALL THREE (or run: npm version X.Y.Z  — see note below)
 #    manifest.json .version, package.json .version, versions.json add "X.Y.Z":"<minAppVersion>"
-npm test && npm run build            # guard test must be green
+npm run lint && npm test && npm run build   # scan clean, guard test green
 
 git add manifest.json package.json versions.json docs/release-notes/X.Y.Z.md
 git commit -m "Release X.Y.Z"

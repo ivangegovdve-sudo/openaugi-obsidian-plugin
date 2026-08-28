@@ -18,6 +18,10 @@ A comprehensive reference for navigating and extending this Obsidian plugin.
 | Task dispatch types | [types/task-dispatch.ts](../src/types/task-dispatch.ts) |
 | Context modals | [ui/context-gathering-modal.ts](../src/ui/context-gathering-modal.ts), [ui/context-selection-modal.ts](../src/ui/context-selection-modal.ts), [ui/context-preview-modal.ts](../src/ui/context-preview-modal.ts) |
 | Session list modal | [ui/session-list-modal.ts](../src/ui/session-list-modal.ts) |
+| Dataview API shims | [types/dataview.ts](../src/types/dataview.ts) |
+| Error message helper | [utils/errors.ts](../src/utils/errors.ts) |
+| API key storage (OS keychain / data.json) | [utils/secret-storage.ts](../src/utils/secret-storage.ts) |
+| Directory-scan lint config | [eslint.config.mjs](../eslint.config.mjs) — see [COMPLIANCE.md](COMPLIANCE.md) |
 
 ---
 
@@ -43,6 +47,7 @@ src/
 │   ├── settings.ts                      # Settings interfaces & defaults
 │   ├── context.ts                       # Context gathering types
 │   ├── transcript.ts                    # API response types
+│   ├── dataview.ts                      # Structural types + guards for the Dataview plugin API
 │   └── task-dispatch.ts                 # Task dispatch types (agents, sessions, frontmatter)
 ├── ui/
 │   ├── settings-tab.ts                  # Settings panel
@@ -54,7 +59,9 @@ src/
 │   ├── session-list-modal.ts            # Task dispatch session list
 │   └── recent-activity-modal.ts         # (Legacy)
 └── utils/
-    └── filename-utils.ts                # Sanitization, backlink mapping
+    ├── filename-utils.ts                # Sanitization, backlink mapping
+    ├── errors.ts                        # getErrorMessage(unknown) → string
+    └── secret-storage.ts                # API key → OS credential store (Obsidian 1.11.4+)
 ```
 
 ---
@@ -304,9 +311,9 @@ Commands are registered in `main.ts`:
 |------------|------|---------|
 | `parse-transcript` | Parse transcript | Process voice transcript (legacy) |
 | `distill-notes` | Distill linked notes | Distill with prompt selection (legacy) |
-| `openaugi-process-notes` | Process notes | Unified flow: linked notes |
-| `openaugi-process-recent` | Process recent activity | Unified flow: recent activity |
-| `openaugi-save-context` | Save context | Save raw aggregated content |
+| `process-notes` | Process notes | Unified flow: linked notes |
+| `process-recent-activity` | Process recent activity | Unified flow: recent activity |
+| `save-context` | Save context | Save raw aggregated content |
 | `augi-run-review-pass` | Augi: Run review pass | Write pending task file: "run the review pass" |
 | `augi-process-dashboard` | Augi: Process dashboard | Write pending task file: "process the dashboard" |
 | `augi-distill-selection` | Augi: Distill selection | Write pending distill task for selection/active note |
@@ -428,10 +435,33 @@ During file creation:
 ## Build & Development
 
 ```bash
-npm run dev      # Development build with watch
-npm run build    # Production build
-npm run typecheck # TypeScript checking
+npm run dev       # Development build with watch
+npm run build     # Production build (tsc -noEmit + esbuild)
+npm test          # Vitest suite
+npm run lint      # Obsidian community-directory scan (errors block a release)
+npm run lint:fix  # Apply the autofixable subset
 ```
+
+### Compliance
+
+`npm run lint` runs the official `eslint-plugin-obsidianmd` — the same
+best-practices checks Obsidian's automated review applies to every published
+release. Errors fail the scan and block a release; warnings are advisory. See
+[COMPLIANCE.md](COMPLIANCE.md).
+
+Two conventions follow from it:
+
+- **No inline styles.** UI elements take CSS classes defined in
+  [styles.css](../styles.css) (`openaugi-*`). Genuinely dynamic values go
+  through `setCssProps()` and a custom property.
+- **Secrets use `app.secretStorage`.** The OpenAI key goes to the OS credential
+  store on Obsidian 1.11.4+, falling back to `data.json` on older builds. Access
+  is feature-detected in [utils/secret-storage.ts](../src/utils/secret-storage.ts);
+  never read a key from a file path or environment variable.
+- **No static Node.js imports.** `task-dispatch-service.ts` loads
+  `child_process`/`fs`/`path`/`util` through `loadNodeApis()`, which guards on
+  `Platform.isDesktop` and uses dynamic `import()`. This also keeps the bundle
+  loadable on mobile.
 
 ### Publishing
 

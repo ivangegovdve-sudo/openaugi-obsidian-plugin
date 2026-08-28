@@ -73,14 +73,73 @@ npm run lint:fix
 ```
 
 `npm run lint` must report **0 errors** before a release — `scripts/release.sh`
-and the tag workflow both enforce it. See [docs/COMPLIANCE.md](docs/COMPLIANCE.md)
-for what the scan checks, which findings block listing, and the accepted
-warnings.
+and the tag workflow both enforce it. See [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 
 ### Code Standards
 - TypeScript with strict mode enabled
-- ESLint configuration for code quality
 - No external runtime dependencies (only Obsidian API)
+- `npm run lint` runs the official `eslint-plugin-obsidianmd`; its errors are the
+  findings that fail Obsidian's automated review, so they block a release
+
+### Community-directory conventions
+
+These are the house rules the directory scan enforces. Follow them when writing
+new code — retrofitting them across the codebase is far more work than getting
+them right the first time.
+
+**Command IDs must not repeat the plugin ID.** Obsidian namespaces every command
+as `openaugi:<id>` automatically, so `id: 'process-notes'` is correct and
+`id: 'openaugi-process-notes'` is redundant. Same for command *names*: don't
+prefix them with "OpenAugi" or include the word "command".
+
+> Renaming an existing command ID silently drops any hotkey a user has bound to
+> it. Get new IDs right on the first release; only rename in a deliberate,
+> release-noted change.
+
+**No inline styles.** Never assign `element.style.*`. Add a CSS class to
+[styles.css](styles.css) using the `openaugi-` prefix and pass it via
+`createEl(tag, { cls })` / `addClass()` / `toggleClass()`. For a genuinely
+dynamic value, set a custom property with `setCssProps()` and consume it in CSS.
+
+**Secrets go through `app.secretStorage`.** The OpenAI key is stored in the OS
+credential store on Obsidian 1.11.4+ and falls back to `data.json` on older
+builds — see [secret-storage.ts](src/utils/secret-storage.ts). Access it through
+that shim's feature detection, never by importing `SecretStorage` from
+`obsidian` (that would trip `no-unsupported-api` at our `minAppVersion` of
+1.8.9). Never read a credential from a file path or an environment variable.
+
+**No static Node.js imports.** Node built-ins must be loaded with a dynamic
+`import()` behind a `Platform.isDesktop` guard — see `loadNodeApis()` in
+[task-dispatch-service.ts](src/services/task-dispatch-service.ts). Static
+imports break the bundle on mobile and fail the scan.
+
+**Use `requestUrl`, not `fetch`,** for all network calls — it works on mobile and
+sidesteps CORS. Any new endpoint must also be documented in the README's
+"Network use and privacy" table.
+
+**Settings headings** use `new Setting(containerEl).setName(...).setHeading()`,
+never a raw `<h3>`. Don't put the word "Settings" in a settings heading.
+
+**The `manifest.json` description is the store listing.** It is mirrored into
+the community directory automatically, so it is user-facing copy, not metadata.
+`validate-manifest` requires 10–250 characters, a capital first letter, a
+trailing period, only `[A-Za-z0-9\s.,!?'"-]` (no parentheses, colons, or
+em-dashes), and no "obsidian"/"plugin". Run `npm run lint` after editing it —
+`manifest.json` and `LICENSE` are linted via explicit blocks in
+`eslint.config.mjs` that the upstream recommended config does not provide.
+
+**Sentence case for all UI text** — button labels, setting names, notices,
+headings, tooltips. "Refresh models", not "Refresh Models".
+
+**No regex lookbehind** — unsupported on iOS before 16.4. Use a capture group and
+restore it in the replacement.
+
+**Prefer Obsidian APIs** over native equivalents: `createEl`/`createDiv`/
+`createSpan` over `document.createElement`, `window.setTimeout` over bare
+`setTimeout`, `FileManager.trashFile()` over `Vault.delete()`.
+
+**Async callbacks** passed where a `void` return is expected must discard the
+promise explicitly: `.onClick(() => { void this.doThing(); })`.
 
 ### Testing
 
@@ -151,8 +210,7 @@ Tests cover: filename utils, OpenAI prompt building, link extraction, BFS traver
 - Enable verbose logging in development
 
 ### Publishing
-See [docs/PUBLISHING.md](docs/PUBLISHING.md) for the complete release process,
-including community-store listing health and how to relist if de-listed.
+See [docs/PUBLISHING.md](docs/PUBLISHING.md) for the complete release process.
 
 **Just run the script** (it bumps all three version files, publishes, and verifies):
 ```bash
@@ -160,11 +218,15 @@ including community-store listing health and how to relist if de-listed.
 ./scripts/release.sh X.Y.Z
 ```
 
-**Non-negotiables** (the guard test `tests/version-consistency.test.ts` enforces these):
-- `npm run lint` reports 0 errors — a release that fails the directory scan gets de-listed after 2026-10-30.
-- Bump **all THREE** version files together: `manifest.json`, `package.json`, **and `versions.json`** (add `"X.Y.Z": "<minAppVersion>"`). Forgetting `versions.json` is the classic mistake.
+**Non-negotiables** (enforced by `tests/version-consistency.test.ts` and the release script):
+- `npm run lint` reports 0 errors — a release that fails the directory scan gets
+  de-listed after 2026-10-30.
+- Bump **all THREE** version files together: `manifest.json`, `package.json`, and
+  `versions.json` (add `"X.Y.Z": "<minAppVersion>"`). Forgetting `versions.json`
+  is the classic mistake.
 - Tag == `manifest.version`, no `v` prefix.
-- **Publish the draft immediately** after CI — never leave the repo advertising a version with no published release (that inconsistency can get the plugin auto-removed from the store).
+- **Publish the draft immediately** after CI — never leave the repo advertising a
+  version with no published release.
 
 ## Important Considerations
 
@@ -173,6 +235,9 @@ including community-store listing health and how to relist if de-listed.
 - Sanitize filenames to prevent filesystem issues
 - Maintain backwards compatibility with existing notes
 - Test with various note structures and edge cases
+- The OpenAI API key lives in the OS credential store (Obsidian 1.11.4+) or the
+  gitignored `data.json` (older builds), never in source, an env var, or a
+  committed file — see [docs/COMPLIANCE.md](docs/COMPLIANCE.md)
 
 # Testing
 

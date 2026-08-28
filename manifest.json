@@ -3,7 +3,7 @@
 	"name": "OpenAugi",
 	"version": "0.6.0",
 	"minAppVersion": "1.8.9",
-	"description": "Process information faster with augmented intelligence (AI for thinkers). Parse your voice notes into atomic notes, tasks, and summaries. Grab context from dataview queries and linked notes. De-duplicate and merge atomic ideas into a clean, organized vault.",
+	"description": "The human context layer for your AI agents. Gather bounded context from linked notes and backlinks, queue agent tasks, and distill raw material into atomic notes, summaries, or posts.",
 	"author": "Chris Lettieri",
 	"authorUrl": "https://bitsofchris.com",
 	"isDesktopOnly": false
