@@ -110,7 +110,13 @@ ok "root manifest = release asset = tag = $VERSION; release is published"
 
 # ── Store-listing health (informational) ─────────────────────────────────────
 step "Community-store listing check"
-if curl -sfL "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugins.json" | grep -qi '"openaugi"'; then
+# Download first rather than piping: `grep -q` exits on the first match, which
+# kills curl with SIGPIPE, and `set -o pipefail` then reports the whole check as
+# a failure even when the plugin is listed.
+CP_LIST="$(mktemp)"
+trap 'rm -f "$CP_LIST"' EXIT
+if curl -sfL "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugins.json" -o "$CP_LIST" \
+   && grep -qi '"openaugi"' "$CP_LIST"; then
   ok "plugin is currently listed in the Obsidian community store"
 else
   printf '\033[33m! Not in the community store list. Users update via BRAT or manual install.\n'
