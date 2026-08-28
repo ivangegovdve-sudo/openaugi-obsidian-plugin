@@ -39,6 +39,12 @@ git rev-parse "$VERSION" >/dev/null 2>&1 && die "tag $VERSION already exists loc
 ok "on master, clean, synced; notes present; tag is free"
 
 # ── Quality gate ─────────────────────────────────────────────────────────────
+step "Obsidian community-directory scan"
+# Mirrors the automated review that gates listing in the community directory.
+# Errors here are the findings that fail the scan, so they block the release.
+npm run lint
+ok "no scan errors"
+
 step "Tests + build"
 npm test
 npm run build
